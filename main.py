@@ -8,12 +8,13 @@ from dotenv import load_dotenv
 
 app = FastAPI()
 
-# Load environment variables from .env file
+# Load .env variables
 load_dotenv()
 
-# CORS configuration
-app.add_middleware(CORSMiddleware,
-    allow_origins=[os.getenv("ALLOWED_ORIGIN")],  # Adjust this to your needs
+# CORS configuration — allow all origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],     # <-- Allow all origins like your site / localhost
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -26,10 +27,9 @@ async def download_video(url: str = Query(...), format: str = Query("best")):
         with yt_dlp.YoutubeDL({'quiet': True, 'skip_download': True}) as ydl:
             info = ydl.extract_info(url, download=False)
             title = info.get("title", "video").replace("/", "-").replace("\\", "-")
-            extension = "mp4"  # fallback extension
+            extension = "mp4"
             filename = f"{title}.{extension}"
 
-        # Create a unique output template
         uid = uuid.uuid4().hex[:8]
         output_template = f"/tmp/{uid}.%(ext)s"
 
@@ -40,11 +40,10 @@ async def download_video(url: str = Query(...), format: str = Query("best")):
             'merge_output_format': 'mp4',
         }
 
-        # Download the video using yt-dlp Python API
+        # Download video
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            result = ydl.download([url])
+            ydl.download([url])
 
-        # Find actual downloaded file
         actual_file_path = None
         for f in os.listdir("/tmp"):
             if f.startswith(uid):
@@ -54,11 +53,10 @@ async def download_video(url: str = Query(...), format: str = Query("best")):
         if not actual_file_path or not os.path.exists(actual_file_path):
             raise HTTPException(status_code=500, detail="Download failed or file not found.")
 
-        # Stream file
         def iterfile():
-            with open(actual_file_path, "rb") as f:
-                yield from f
-            os.unlink(actual_file_path)  # clean up after stream
+            with open(actual_file_path, "rb") as file_stream:
+                yield from file_stream
+            os.unlink(actual_file_path)
 
         return StreamingResponse(
             iterfile(),
@@ -71,8 +69,8 @@ async def download_video(url: str = Query(...), format: str = Query("best")):
 
 @app.get("/")
 async def root():
-    return {"message": "Welcome to the Social Media Video Downloader API. Use /download?url=<video_url>&format=<video_format> to download videos."}
+    return {"message": "Social Media Video Downloader with CORS enabled."}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
